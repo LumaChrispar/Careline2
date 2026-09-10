@@ -1,0 +1,7 @@
+import useRecords from '../hooks/useRecords'
+import useAuthStore from '../stores/authStore'
+import { Panel,Feedback,Status,Empty,ActionButton } from '../components/ui/CarelineUI'
+export default function ReferralsPage(){
+ const data=useRecords('referrals',{field:null}),f=useAuthStore(s=>s.user.user_metadata.facility_id)
+ return <div className="care-stack"><div><p className="care-eyebrow">CONNECTED CARE</p><h1>Keep the next institution informed.</h1><p>Send referrals from the patient record. Accepting one shares registration details, with the recorded consent.</p></div><Panel title="Incoming and outgoing referrals"><Feedback data={data}/>{data.rows.filter(r=>r.facility_id===f||r.target_facility_id===f).map(r=><div className="care-history" key={r.id}><strong>{r.target_facility_id===f?'Incoming':'Outgoing'} · {r.patient_id}</strong> <Status value={r.status}/><p className="care-prewrap">{r.reason}</p><p className="care-muted">Consent recorded · {new Date(r.created_at).toLocaleString()}</p>{r.target_facility_id===f&&r.status==='sent'&&<><ActionButton action="referral_status" initial={{id:r.id,status:'accepted'}}>Accept referral</ActionButton><ActionButton action="referral_status" initial={{id:r.id,status:'declined'}}>Decline</ActionButton></>}{r.target_facility_id===f&&r.status==='accepted'&&<ActionButton action="referral_status" initial={{id:r.id,status:'completed'}}>Mark completed</ActionButton>}</div>)}{!data.rows.length&&<Empty>No referrals yet.</Empty>}</Panel></div>
+}
