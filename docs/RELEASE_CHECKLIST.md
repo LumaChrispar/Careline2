@@ -4,6 +4,8 @@
 
 Passed: lint, production web build, 47 core/database/mobile tests, 20 browser tests, Android bundle export, and iOS bundle export. Browser coverage includes all six roles at desktop and narrow-phone widths. The SQL was installed twice on a fresh isolated database and used to upgrade a populated copy of the original schema. No hosted database was changed.
 
+SDK follow-up: mobile now uses Expo 57.0.23, React Native 0.86.3 and React 19.2.3. All 21 Expo Doctor checks, dependency compatibility checks, and Android/iOS Hermes exports pass. Metro advertises SDK 57.0.0 for Expo Go. See [SDK rebuild instructions](EXPO_SDK_UPGRADE.md); these checks do not replace testing the upgraded app on a device.
+
 ## Automated local coverage
 
 - Lint parses web and mobile source.

@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/careline-icon-v2.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/careline-icon-v2.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -25,6 +20,15 @@
       "favicon": "./assets/careline-icon-v2.png"
     },
     "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/careline-icon-v2.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#ffffff"
+        }
+      ],
       "expo-secure-store",
       "@react-native-community/datetimepicker",
       [
@@ -35,7 +39,8 @@
           "microphonePermission": false
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-dev-client"
     ],
     "extra": {
       "eas": {
