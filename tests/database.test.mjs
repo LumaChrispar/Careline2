@@ -16,18 +16,7 @@ async function asUser(id) {
 }
 async function cmd(action, payload, f=facility) { return (await db.query('SELECT public.careline_command($1,$2,$3) AS result',[action,f,JSON.stringify(payload)])).rows[0].result }
 before(async () => {
-  await db.exec(`
-    CREATE ROLE anon; CREATE ROLE authenticated; CREATE ROLE service_role;
-    CREATE SCHEMA auth; CREATE SCHEMA storage;
-    CREATE TABLE auth.users(id uuid PRIMARY KEY,email text,phone text,raw_user_meta_data jsonb DEFAULT '{}',email_confirmed_at timestamptz,updated_at timestamptz);
-    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-    GRANT USAGE ON SCHEMA auth,public TO authenticated,anon;
-    GRANT EXECUTE ON FUNCTION auth.uid() TO authenticated,anon;
-    CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
-    CREATE TABLE storage.objects(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),bucket_id text,name text,owner_id text);
-    ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
-    CREATE FUNCTION storage.foldername(text) RETURNS text[] LANGUAGE sql AS $$ SELECT string_to_array($1,'/') $$;
-  `)
+  await db.exec(await readFile('tests/fixtures/supabase-platform.sql','utf8'))
   await db.exec(await readFile('database-migrations/20260910_careline.sql','utf8'))
   await db.query(`INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,'admin@example.com',now()),($2,'nurse@example.com',now()),($3,'outsider@example.com',now())`,[admin,nurse,outsider])
   await db.query(`INSERT INTO public.facilities(id,name,status) VALUES($1,'Centre A','active'),($2,'Centre B','active')`,[facility,otherFacility])
@@ -101,10 +90,122 @@ test('completed laboratory results require clinician review', async () => {
   await cmd('lab_review',{id:lab})
   assert.equal((await db.query('SELECT reviewed_by FROM public.lab_results WHERE id=$1',[lab])).rows[0].reviewed_by,admin)
 })
+test('historical column grants cannot bypass command validation', async () => {
+  await db.exec('RESET ROLE; GRANT UPDATE(notes) ON public.visits TO authenticated; GRANT INSERT ON public.lab_results TO authenticated;')
+  await db.exec(await readFile('database.sql','utf8'))
+  await asUser(admin)
+  await assert.rejects(db.exec("UPDATE public.visits SET notes='Bypassed'"),/permission denied/)
+  await assert.rejects(db.query("INSERT INTO public.lab_results(patient_id,test_type) VALUES($1,'Bypassed')",['CL-'+requestId]),/permission denied/)
+})
+
+test('directory and targeted notices respect active facility memberships', async () => {
+  await asUser(nurse)
+  const directory=(await db.query('SELECT public.careline_staff_directory($1) AS result',[facility])).rows[0].result
+  assert.equal(directory.length,2)
+  assert.ok(directory.every(p=>!('email' in p)))
+  await assert.rejects(db.query('SELECT public.careline_staff_directory($1)',[otherFacility]),/access denied/)
+  const notice=(await cmd('notice',{content:'Shift handover',priority:'urgent',target_type:'individual',target_user_id:admin})).id
+  await assert.rejects(cmd('notice',{content:'Invalid audience',priority:'normal',target_type:'individual',target_user_id:outsider}),/active colleague/)
+  await asUser(outsider)
+  assert.equal((await db.query('SELECT * FROM public.staff_broadcasts WHERE id=$1',[notice])).rows.length,0)
+  await assert.rejects(cmd('delete_notice',{id:notice}),/access denied/)
+  await asUser(admin)
+  assert.equal((await db.query('SELECT content FROM public.staff_broadcasts WHERE id=$1',[notice])).rows[0].content,'Shift handover')
+  await cmd('delete_notice',{id:notice})
+  assert.equal((await db.query("SELECT * FROM public.audit_events WHERE entity='staff_broadcasts' AND action='DELETE' AND entity_id=$1",[notice])).rows.length,1)
+})
+
+test('referrals require consent and acceptance without exposing originating visits', async () => {
+  await asUser(admin)
+  await assert.rejects(cmd('refer',{patient_id:'CL-'+requestId,target_facility_id:otherFacility,reason:'Follow-up',consent_recorded:false}),/check constraint/)
+  const referral=(await cmd('refer',{patient_id:'CL-'+requestId,target_facility_id:otherFacility,reason:'Follow-up',consent_recorded:true})).id
+  await asUser(outsider)
+  await assert.rejects(cmd('referral_status',{id:referral,status:'completed'},otherFacility),/invalid transition/)
+  await cmd('referral_status',{id:referral,status:'accepted'},otherFacility)
+  assert.equal((await db.query('SELECT * FROM public.patients WHERE id=$1',['CL-'+requestId])).rows.length,1)
+  assert.equal((await db.query('SELECT * FROM public.visits')).rows.length,0)
+  await cmd('referral_status',{id:referral,status:'completed'},otherFacility)
+})
+
+test('appointment arrival creates one visit and closed appointments stay closed', async () => {
+  await asUser(admin)
+  const patient=await cmd('register',{first_name:'Booking',last_name:'Test'})
+  const appointment=(await cmd('appointment',{patient_id:patient.id,scheduled_at:'2099-01-01T10:00:00Z',reason:'Follow-up'})).id
+  await assert.rejects(cmd('appointment_status',{id:appointment,status:'requested'}),/Invalid appointment status/)
+  await cmd('appointment_status',{id:appointment,status:'arrived'})
+  await assert.rejects(cmd('appointment_status',{id:appointment,status:'arrived'}),/unavailable/)
+  assert.equal((await db.query('SELECT count(*)::int n FROM public.visits WHERE patient_id=$1',[patient.id])).rows[0].n,1)
+})
+
+test('standalone results require laboratory permission and the correct private attachment', async () => {
+  await asUser(nurse)
+  await assert.rejects(cmd('lab_upload',{patient_id:'CL-'+requestId,test_type:'Test',summary:'Result'}),/Laboratory/)
+  await asUser(admin)
+  await assert.rejects(cmd('lab_upload',{patient_id:'CL-'+requestId,test_type:'Test',summary:'Result',storage_path:otherFacility+'/other/file.pdf'}),/private attachment/)
+  const lab=(await cmd('lab_upload',{patient_id:'CL-'+requestId,test_type:'Test',summary:'Result'})).id
+  assert.equal((await db.query('SELECT status FROM public.lab_results WHERE id=$1',[lab])).rows[0].status,'completed')
+})
+
+test('fully dispensed prescriptions leave the active queue', async () => {
+  await asUser(admin)
+  const rx=(await cmd('prescribe',{patient_id:'CL-'+requestId,medication:'Complete test',instructions:'Example',quantity:2})).id
+  const batch=(await cmd('stock',{medication:'Complete test',batch_number:'COMPLETE-1',expires_on:'2099-01-01',quantity:4,unit_price:100})).id
+  await cmd('dispense',{prescription_id:rx,batch_id:batch,quantity:2})
+  assert.equal((await db.query('SELECT status FROM public.prescriptions WHERE id=$1',[rx])).rows[0].status,'completed')
+  await assert.rejects(cmd('dispense',{prescription_id:rx,batch_id:batch,quantity:1}),/Active prescription/)
+})
+
 test('membership revocation is immediate and the last administrator is protected', async () => {
   await asUser(admin)
   await assert.rejects(db.query('SELECT public.careline_manage_member($1,$2,$3,$4)',[facility,admin,'nurse',true]),/at least one/)
   await db.query('SELECT public.careline_manage_member($1,$2,$3,$4)',[facility,nurse,'nurse',false])
   await asUser(nurse)
   await assert.rejects(cmd('register',{first_name:'A',last_name:'B'}),/access denied/)
+})
+
+test('an assigned external pharmacy can identify and bill a patient without seeing consultations', async () => {
+  const pharmacist='10000000-0000-4000-8000-000000000004',pharmacy='20000000-0000-4000-8000-000000000004'
+  await db.exec('RESET ROLE')
+  await db.query("INSERT INTO auth.users(id,email) VALUES($1,'pharmacist@example.com')",[pharmacist])
+  await db.query("INSERT INTO public.facilities(id,name,status,facility_type) VALUES($1,'External pharmacy','active','pharmacy')",[pharmacy])
+  await db.query("INSERT INTO public.facility_members(facility_id,user_id,role,active) VALUES($1,$2,'pharmacist',true)",[pharmacy,pharmacist])
+  await asUser(pharmacist)
+  assert.equal((await db.query('SELECT * FROM public.patients WHERE id=$1',['CL-'+requestId])).rows.length,0)
+  await asUser(admin)
+  const rx=(await cmd('prescribe',{patient_id:'CL-'+requestId,pharmacy_id:pharmacy,medication:'External test',instructions:'Example',quantity:2})).id
+  await asUser(pharmacist)
+  assert.equal((await db.query('SELECT * FROM public.patients WHERE id=$1',['CL-'+requestId])).rows.length,1)
+  assert.equal((await db.query('SELECT * FROM public.visits')).rows.length,0)
+  const batch=(await cmd('stock',{medication:'External test',batch_number:'EXT-1',expires_on:'2099-01-01',quantity:2,unit_price:100},pharmacy)).id
+  await cmd('dispense',{prescription_id:rx,batch_id:batch,quantity:2},pharmacy)
+  const invoice=await cmd('invoice',{patient_id:'CL-'+requestId,description:'Dispensed medicine',total:200},pharmacy)
+  assert.ok(invoice.id)
+})
+
+test('root SQL is the complete current installation script', async () => {
+  assert.equal(await readFile('database.sql','utf8'),await readFile('database-migrations/20260910_careline.sql','utf8'))
+})
+
+test('original database upgrades without losing records or trusting legacy roles', async () => {
+  const legacy=new PGlite()
+  try {
+    await legacy.exec(await readFile('tests/fixtures/supabase-platform.sql','utf8'))
+    // gen_random_uuid is built in; PGlite has no Supabase realtime publication.
+    const oldSql=(await readFile('tests/fixtures/legacy-database.sql','utf8')).replace(/^CREATE EXTENSION.*$/gm,'').replace(/^ALTER PUBLICATION.*$/gm,'')
+    await legacy.exec(oldSql)
+    await legacy.query("INSERT INTO auth.users(id,email,raw_user_meta_data) VALUES($1,'legacy@example.com',$2)",[admin,JSON.stringify({role:'doctor',name:'Legacy doctor'})])
+    await legacy.query("INSERT INTO public.facilities(id,name) VALUES($1,'Legacy centre')",[facility])
+    await legacy.query("UPDATE public.profiles SET facility_id=$1,role='doctor' WHERE id=$2",[facility,admin])
+    await legacy.query("INSERT INTO public.patients(id,first_name,last_name,date_of_birth,facility_id) VALUES('LEGACY-1','Existing','Patient','1990-01-01',$1)",[facility])
+    await legacy.query("INSERT INTO public.lab_results(patient_id,test_type,summary,notified_at,facility_id) VALUES('LEGACY-1','Historical test','Historical result',now(),$1)",[facility])
+    await legacy.exec(await readFile('database.sql','utf8'))
+    await legacy.exec(await readFile('database.sql','utf8'))
+    assert.equal((await legacy.query("SELECT count(*)::int n FROM public.patients WHERE id='LEGACY-1'")).rows[0].n,1)
+    assert.equal((await legacy.query('SELECT active FROM public.facility_members WHERE user_id=$1',[admin])).rows[0].active,false)
+    assert.equal((await legacy.query("SELECT status FROM public.lab_results WHERE patient_id='LEGACY-1'")).rows[0].status,'completed')
+    assert.equal((await legacy.query("SELECT public FROM storage.buckets WHERE id='LAB_result'")).rows[0].public,false)
+    await legacy.exec('SET ROLE authenticated')
+    await legacy.query("SELECT set_config('request.jwt.claim.sub',$1,false)",[admin])
+    await assert.rejects(legacy.query('SELECT public.admin_delete_user($1)',[admin]),/permission denied/)
+  } finally { await legacy.close() }
 })

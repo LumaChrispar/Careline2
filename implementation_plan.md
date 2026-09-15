@@ -1,3 +1,5 @@
+> Historical planning/review document. Current setup: [deployment guide](docs/DEPLOYMENT.md). Current verification: [release checklist](docs/RELEASE_CHECKLIST.md).
+
 # ECO~MEDIK — Implementation Plan
 
 Build a React + Vite web application for hospital patient record management, lab result delivery, and disease outbreak detection in Cameroon. Uses Supabase as the backend (auth, DB, storage, realtime) and supports offline-first usage via IndexedDB (Dexie.js).

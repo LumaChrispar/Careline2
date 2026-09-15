@@ -1,3 +1,5 @@
+> Historical planning/review document. Current setup: [deployment guide](docs/DEPLOYMENT.md). Current verification: [release checklist](docs/RELEASE_CHECKLIST.md).
+
 # Application review and refresh — 7 September 2026
 
 ## Implemented

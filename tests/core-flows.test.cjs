@@ -9,32 +9,57 @@ function loadStore(file, supabase, createClient = () => supabase) {
     .replace(/^import .*$/gm, '')
     .replace(/import\.meta\.env\.\w+/g, "'test-config'")
     .replace(/export default (\w+)/, 'return $1');
-  return new Function('create', 'supabase', 'createClient', source)(create, supabase, createClient);
+  const library = fs.readFileSync('src/lib/careline.js', 'utf8').replace(/^import .*$/gm, '').replace(/export /g, '');
+  const helpers = new Function('supabase', library + '\nreturn {rpc,signIn,normalizePhone}')(supabase);
+  return new Function('create', 'supabase', 'createClient', 'rpc', 'signIn', 'normalizePhone', source)(create, supabase, createClient, helpers.rpc, helpers.signIn, helpers.normalizePhone);
 }
 
 test('phone login strips formatting consistently', async () => {
   let credentials;
   const store = loadStore('src/stores/authStore.js', { auth: { signInWithPassword: async input => { credentials = input; return { error: null }; } } });
   await store.getState().login(' +237 (677) 123-456 ', 'password');
-  assert.equal(credentials.email, '237677123456@patient.eco-medic.local');
+  assert.equal(credentials.phone, '+237677123456');
 });
 
-test('staff signup uses a detached client and preserves admin session', async () => {
-  let signup = false;
-  const store = loadStore('src/stores/authStore.js', { auth: { signUp: () => { throw Error('Main session used'); } } }, (_url, _key, options) => {
-    assert.equal(options.auth.persistSession, false);
-    return { auth: { signUp: async () => { signup = true; return { error: null }; } } };
-  });
-  store.setState({ user: { id: 'admin' } });
-  assert.equal((await store.getState().createStaffAccount('N', 'n@example.com', 'doctor', 'password', null)).success, true);
-  assert.equal(signup, true);
-  assert.equal(store.getState().user.id, 'admin');
+test('staff access comes from verified server memberships, never signup metadata', async () => {
+  const session = { user: { id: 'member', user_metadata: { role: 'admin', facility_id: 'spoofed' } } };
+  const store = loadStore('src/stores/authStore.js', { rpc: async name => {
+    assert.equal(name, 'careline_context');
+    return { data: { name: 'Marie', role: 'nurse', facility_id: 'verified', memberships: [], is_operator: false } };
+  } });
+  await store.getState().refreshContext(session);
+  assert.equal(store.getState().role, 'nurse');
+  assert.equal(store.getState().user.user_metadata.facility_id, 'verified');
+  assert.equal(store.getState().createStaffAccount, undefined);
+});
+
+test('a stale context response cannot restore a signed-out account', async () => {
+  let resolveContext;
+  const store = loadStore('src/stores/authStore.js', { rpc: () => new Promise(resolve => { resolveContext = resolve; }) });
+  const pending = store.getState().refreshContext({ user: { id: 'old' } });
+  await store.getState().refreshContext(null);
+  resolveContext({ data: { role: 'admin', memberships: [] } });
+  await pending;
+  assert.equal(store.getState().user, null);
+  assert.equal(store.getState().role, null);
+});
+
+test('failed context loads deny access and can be retried', async () => {
+  let fail = true;
+  const store = loadStore('src/stores/authStore.js', { rpc: async () => fail ? { error: { message: 'Unavailable' } } : { data: { role: 'nurse', memberships: [], name: 'Marie' } } });
+  await store.getState().refreshContext({ user: { id: 'member' } });
+  assert.equal(store.getState().user, null);
+  assert.equal(store.getState().error, 'Unavailable');
+  fail = false;
+  await store.getState().refreshContext();
+  assert.equal(store.getState().user.id, 'member');
+  assert.equal(store.getState().error, null);
 });
 
 test('restored sessions expose role and name and unsubscribe cleanly', async () => {
   let unsubscribed = false;
   const session = { user: { id: 'real-id', user_metadata: { name: 'Amina', role: 'doctor', id: 'spoofed-id' } } };
-  const store = loadStore('src/stores/authStore.js', { auth: {
+  const store = loadStore('src/stores/authStore.js', { rpc: async () => ({ data: { name: 'Amina', role: 'doctor', memberships: [] } }), auth: {
     getSession: async () => ({ data: { session } }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe: () => { unsubscribed = true; } } } }),
   } });

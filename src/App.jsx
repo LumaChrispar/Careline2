@@ -7,7 +7,7 @@ import CareLandingPage from './pages/CareLandingPage'
 import { syncIntake } from './lib/offline'
 const Worklist=lazy(()=>import('./pages/WorklistPage'))
 const Patients=lazy(()=>import('./pages/CarePatientsPage'))
-const Intake=lazy(()=>import('./pages/CareIntakePage'))
+import Intake from './pages/CareIntakePage'
 const Patient=lazy(()=>import('./pages/CarePatientPage'))
 const Labs=lazy(()=>import('./pages/CareLabPage'))
 const Upload=lazy(()=>import('./pages/CareUploadPage'))
@@ -18,7 +18,7 @@ const Billing=lazy(()=>import('./pages/BillingPage'))
 const Institutions=lazy(()=>import('./pages/InstitutionsPage'))
 const Team=lazy(()=>import('./pages/CareStaffPage'))
 const Portal=lazy(()=>import('./pages/CarePortalPage'))
-const Pending=lazy(()=>import('./pages/PendingPage'))
+import Pending from './pages/PendingPage'
 const Account=lazy(()=>import('./pages/AccountPage'))
 const NoticeBoard=lazy(()=>import('./pages/StaffCommunicationPage'))
 function Guard({roles,children}){
@@ -33,9 +33,9 @@ export default function App(){
  useEffect(()=>{
   if(!user)return
   const sync=()=>syncIntake(user.id).catch(()=>{})
-  const refresh=()=>{refreshContext();sync()}
+  const refresh=()=>{if(navigator.onLine){refreshContext();sync()}}
   window.addEventListener('online',refresh);window.addEventListener('focus',refresh)
-  const timer=setInterval(()=>refreshContext(),60000)
+  const timer=setInterval(()=>{if(navigator.onLine)refreshContext()},60000)
   sync()
   return()=>{window.removeEventListener('online',refresh);window.removeEventListener('focus',refresh);clearInterval(timer)}
  },[user?.id,refreshContext])

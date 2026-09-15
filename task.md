@@ -1,3 +1,5 @@
+> Historical planning/review document. Current setup: [deployment guide](docs/DEPLOYMENT.md). Current verification: [release checklist](docs/RELEASE_CHECKLIST.md).
+
 # ECO~MEDIK — Build Task Tracker
 
 ## Phase 1: Project Setup (M1)

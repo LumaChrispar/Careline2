@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { command } from '../lib/careline'
 import useAuthStore from '../stores/authStore'
 import PatientSelect from '../components/PatientSelect'
 import { Panel,Field } from '../components/ui/CarelineUI'
@@ -15,8 +16,7 @@ export default function CareUploadPage(){
     const {error}=await supabase.storage.from('LAB_result').upload(path,file)
     if(error)throw error
    }
-   const {error}=await supabase.from('lab_results').insert({id,patient_id:p.patient_id,facility_id:facility,test_type:p.test_type,summary:p.summary,storage_path:path,uploaded_by:user.id})
-   if(error)throw error
+   await command('lab_upload',facility,{id,patient_id:p.patient_id,test_type:p.test_type,summary:p.summary,storage_path:path})
    setMessage('Result saved. A clinician can now review it.');form.reset();window.dispatchEvent(new Event('careline:refresh'))
   }catch(e){
    if(path)await supabase.storage.from('LAB_result').remove([path])

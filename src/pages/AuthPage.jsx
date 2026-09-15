@@ -13,6 +13,7 @@ export default function AuthPage(){
    if(pendingPhone){const {error}=await supabase.auth.verifyOtp({phone:pendingPhone,token:p.code,type:'sms'});if(error)throw error;return}
    if(recover){const {error}=await supabase.auth.resetPasswordForEmail(p.identifier,{redirectTo:window.location.origin+'/account'});if(error)throw error;setMessage('If this email has an account, a password reset link will be sent.');return}
    if(!register){const result=await login(p.identifier,p.password);if(!result.success)throw Error(result.error);return}
+   if(p.purpose==='new_patient'&&(!p.first_name.trim()||!p.last_name.trim()))throw Error('Enter the patient first and last names.')
    const identity=p.identifier.includes('@')?{email:p.identifier.trim()}:{phone:normalizePhone(p.identifier)}
    const metadata={name:p.name, ...(p.purpose==='new_patient'?{first_name:p.first_name,last_name:p.last_name}:{}),phone:identity.phone||null}
    const {data,error}=await supabase.auth.signUp({...identity,password:p.password,options:{data:metadata,emailRedirectTo:window.location.origin+'/my-records'}})

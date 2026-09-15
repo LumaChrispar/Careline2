@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import useAuthStore from '../stores/authStore'
+import { searchPatients } from '../lib/patientSearch'
 import { fullName, ageLabel } from '../lib/careline'
 import { Panel, Empty, Field } from '../components/ui/CarelineUI'
 export default function CarePatientsPage() {
@@ -11,11 +12,7 @@ export default function CarePatientsPage() {
     setBusy(true);setError('')
     try{
       let q=supabase.from('patients').select('*').is('archived_at',null).order('created_at',{ascending:false}).range(page*25,page*25+24)
-      const clean=search.trim().replace(/[^\p{L}\p{N} +@.-]/gu,'')
-      if(clean) {
-        const parts=clean.split(/\s+/)
-        q=parts.length>1 ? q.ilike('first_name','%'+parts[0]+'%').ilike('last_name','%'+parts.slice(1).join(' ')+'%') : q.or(['first_name','last_name','phone','id'].map(f=>f+'.ilike.%'+clean+'%').join(','))
-      }
+      q=searchPatients(q,search)
       const {data,error}=await q
       if(error)throw error
       if(live)setRows(data||[])

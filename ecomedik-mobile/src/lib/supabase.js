@@ -2,10 +2,9 @@ import 'react-native-url-polyfill/auto';
 import { createClient } from '@supabase/supabase-js';
 import * as SecureStore from 'expo-secure-store';
 
-// Supabase credentials (same as the web app .env)
-export const SUPABASE_URL = 'https://mxmoaqntryeecaxmkhlz.supabase.co';
-export const SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im14bW9hcW50cnllZWNheG1raGx6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0NTg5MTksImV4cCI6MjA5MTAzNDkxOX0.t4CwEGvCY6T_gJr-A9-AGrIHFdVkqo0TpEwPaL_ZW1E';
+// Public client credentials are configured per environment; never use a service-role key.
+export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 // Secure token storage adapter for Expo
 const ExpoSecureStoreAdapter = {

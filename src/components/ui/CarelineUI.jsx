@@ -12,7 +12,7 @@ export function Feedback({ data }) {
 }
 export function Empty({ children = 'No records yet.' }) { return <div className="care-empty">{children}</div> }
 export function Field({ label, name, type = 'text', required = false, options, ...props }) {
-  return <label className="care-field"><span>{label}{required ? ' *' : ''}</span>{options ? <select name={name} required={required} {...props}>{options.map(o => <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>)}</select> : type === 'textarea' ? <textarea name={name} rows={3} required={required} {...props}/> : <input name={name} type={type} required={required} {...props}/>}</label>
+  return <label className="care-field"><span>{label}{required && <span aria-hidden="true"> *</span>}</span>{options ? <select aria-label={label} name={name} required={required} {...props}>{options.map(o => <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>)}</select> : type === 'textarea' ? <textarea aria-label={label} name={name} rows={3} required={required} {...props}/> : <input aria-label={label} name={name} type={type} required={required} {...props}/>}</label>
 }
 export function ActionForm({ action, facilityId, initial = {}, children, label = 'Save', after, transform }) {
   const selected = useAuthStore(s => s.user?.user_metadata?.facility_id)

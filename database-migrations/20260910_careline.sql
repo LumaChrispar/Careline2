@@ -73,7 +73,8 @@ ALTER TABLE public.lab_results ADD COLUMN IF NOT EXISTS storage_path text;
 ALTER TABLE public.lab_results ADD COLUMN IF NOT EXISTS requested_by uuid REFERENCES auth.users(id);
 ALTER TABLE public.lab_results ADD COLUMN IF NOT EXISTS reviewed_by uuid REFERENCES auth.users(id);
 ALTER TABLE public.lab_results ADD COLUMN IF NOT EXISTS specimen_reference text;
-UPDATE public.lab_results SET status=CASE WHEN notified_at IS NOT NULL THEN 'reviewed' WHEN nullif(trim(summary),'') IS NOT NULL THEN 'completed' ELSE 'requested' END WHERE status IS NULL;
+-- Historical notification timestamps do not establish clinician review.
+UPDATE public.lab_results SET status=CASE WHEN nullif(trim(summary),'') IS NOT NULL THEN 'completed' ELSE 'requested' END WHERE status IS NULL;
 ALTER TABLE public.lab_results ALTER COLUMN status SET DEFAULT 'requested';
 ALTER TABLE public.lab_results ALTER COLUMN status SET NOT NULL;
 -- Retain old file references; private access is resolved by the client, never served publicly.
@@ -149,15 +150,15 @@ DO $$ DECLARE t text; pol record; BEGIN
  FOREACH t IN ARRAY ARRAY['facilities','profiles','facility_members','staff_invitations','patients','patient_facilities','visits','observations','lab_results','prescriptions','stock_batches','dispensings','appointments','referrals','invoices','payments','outbreak_alerts','staff_broadcasts','audit_events','record_links'] LOOP
   EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
   FOR pol IN SELECT policyname FROM pg_policies WHERE schemaname='public' AND tablename=t LOOP EXECUTE format('DROP POLICY %I ON public.%I',pol.policyname,t); END LOOP;
-  EXECUTE format('REVOKE ALL ON public.%I FROM anon, authenticated',t);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC, anon, authenticated',t);
+  -- Table-level REVOKE does not remove historical column-level grants.
+  EXECUTE (SELECT format('REVOKE ALL (%s) ON public.%I FROM PUBLIC, anon, authenticated',string_agg(quote_ident(column_name),','),t) FROM information_schema.columns WHERE table_schema='public' AND table_name=t);
   EXECUTE format('GRANT SELECT ON public.%I TO authenticated',t);
  END LOOP;
 END $$;
 GRANT UPDATE(name) ON public.profiles TO authenticated;
-GRANT INSERT ON public.patients,public.visits,public.lab_results,public.staff_broadcasts,public.outbreak_alerts TO authenticated;
-GRANT UPDATE(first_name,last_name,date_of_birth,gender,phone,email,region,village,blood_group,allergies,next_of_kin,birth_date_accuracy) ON public.patients TO authenticated;
-GRANT UPDATE(diagnosis,prescription,notes,symptoms,follow_up_date) ON public.visits TO authenticated;
-GRANT UPDATE(summary,notified_at,specimen_reference) ON public.lab_results TO authenticated;
+-- Clinical writes go through validated, audited workflow commands.
+GRANT INSERT ON public.outbreak_alerts TO authenticated;
 GRANT UPDATE(resolved_at,case_count) ON public.outbreak_alerts TO authenticated;
 CREATE POLICY facility_read ON public.facilities FOR SELECT TO authenticated USING(status='active' OR owner_id=auth.uid() OR public.careline_operator() OR EXISTS(SELECT 1 FROM public.facility_members m WHERE m.facility_id=id AND m.user_id=auth.uid()));
 CREATE POLICY profile_read ON public.profiles FOR SELECT TO authenticated USING(id=auth.uid() OR EXISTS(SELECT 1 FROM public.facility_members m WHERE m.user_id=profiles.id AND public.careline_role(m.facility_id)='admin'));
@@ -165,7 +166,7 @@ CREATE POLICY profile_edit ON public.profiles FOR UPDATE TO authenticated USING(
 CREATE POLICY member_read ON public.facility_members FOR SELECT TO authenticated USING(user_id=auth.uid() OR public.careline_role(facility_id)='admin' OR public.careline_operator());
 CREATE POLICY invitation_read ON public.staff_invitations FOR SELECT TO authenticated USING(public.careline_role(facility_id)='admin');
 CREATE POLICY patient_link_read ON public.patient_facilities FOR SELECT TO authenticated USING(public.careline_role(facility_id) IS NOT NULL OR public.careline_owns(patient_id));
-CREATE POLICY patient_read ON public.patients FOR SELECT TO authenticated USING(auth_user_id=auth.uid() OR EXISTS(SELECT 1 FROM public.patient_facilities l WHERE l.patient_id=id AND public.careline_role(l.facility_id) IS NOT NULL));
+CREATE POLICY patient_read ON public.patients FOR SELECT TO authenticated USING(auth_user_id=auth.uid() OR EXISTS(SELECT 1 FROM public.patient_facilities l WHERE l.patient_id=id AND public.careline_role(l.facility_id) IS NOT NULL) OR EXISTS(SELECT 1 FROM public.prescriptions rx WHERE rx.patient_id=patients.id AND public.careline_role(rx.pharmacy_id) IN ('admin','pharmacist')));
 CREATE POLICY patient_create ON public.patients FOR INSERT TO authenticated WITH CHECK(auth_user_id IS NULL AND public.careline_role(facility_id) IN ('admin','nurse','doctor'));
 CREATE POLICY patient_edit ON public.patients FOR UPDATE TO authenticated USING(auth_user_id=auth.uid() OR EXISTS(SELECT 1 FROM public.patient_facilities l WHERE l.patient_id=id AND public.careline_role(l.facility_id) IN ('admin','nurse','doctor')));
 CREATE POLICY visit_read ON public.visits FOR SELECT TO authenticated USING(public.careline_owns(patient_id) OR public.careline_role(facility_id) IN ('admin','doctor','nurse'));
@@ -211,14 +212,14 @@ CREATE TRIGGER careline_patient_created AFTER INSERT ON public.patients FOR EACH
 
 CREATE OR REPLACE FUNCTION public.careline_audit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE row_data jsonb; fields text[]; BEGIN
- row_data:=to_jsonb(NEW);
+ row_data:=CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
  IF TG_OP='UPDATE' THEN SELECT array_agg(key) INTO fields FROM jsonb_each(row_data) WHERE value IS DISTINCT FROM to_jsonb(OLD)->key; END IF;
  INSERT INTO public.audit_events(actor_id,facility_id,entity,entity_id,action,changed_fields)
  VALUES(auth.uid(),nullif(row_data->>'facility_id','')::uuid,TG_TABLE_NAME,coalesce(row_data->>'id',row_data->>'user_id'),TG_OP,fields);
  RETURN NEW; END $$;
-DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['patients','visits','observations','lab_results','prescriptions','stock_batches','dispensings','appointments','referrals','invoices','payments','facility_members','record_links'] LOOP
+DO $$ DECLARE t text; BEGIN FOREACH t IN ARRAY ARRAY['patients','visits','observations','lab_results','prescriptions','stock_batches','dispensings','appointments','referrals','invoices','payments','facility_members','record_links','staff_broadcasts'] LOOP
  EXECUTE format('DROP TRIGGER IF EXISTS careline_audit ON public.%I',t);
- EXECUTE format('CREATE TRIGGER careline_audit AFTER INSERT OR UPDATE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.careline_audit()',t);
+ EXECUTE format('CREATE TRIGGER careline_audit AFTER INSERT OR UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION public.careline_audit()',t);
 END LOOP; END $$;
 
 -- Retire unsafe destructive and identity-bypass APIs, even if previously granted.
@@ -245,6 +246,11 @@ END $$;
 CREATE OR REPLACE FUNCTION public.careline_switch_facility(f uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$ BEGIN
  IF auth.uid() IS NULL OR public.careline_role(f) IS NULL THEN RAISE EXCEPTION 'Facility access denied'; END IF;
  UPDATE public.profiles SET facility_id=f WHERE id=auth.uid(); END $$;
+CREATE OR REPLACE FUNCTION public.careline_staff_directory(f uuid) RETURNS jsonb LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$ BEGIN
+ IF public.careline_role(f) IS NULL THEN RAISE EXCEPTION 'Facility access denied'; END IF;
+ RETURN coalesce((SELECT jsonb_agg(jsonb_build_object('id',p.id,'name',coalesce(p.name,'Staff member'),'role',m.role) ORDER BY p.name)
+ FROM public.facility_members m JOIN public.profiles p ON p.id=m.user_id WHERE m.facility_id=f AND m.active),'[]'::jsonb);
+END $$;
 CREATE OR REPLACE FUNCTION public.careline_apply_facility(payload jsonb) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE fid uuid; BEGIN
  IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Sign in to apply'; END IF;
@@ -286,6 +292,16 @@ DECLARE r text; pid text; rid uuid; v public.visits; rx public.prescriptions; b 
  ELSIF r IS NULL THEN RAISE EXCEPTION 'Facility access denied'; END IF;
 
  CASE action
+ WHEN 'notice' THEN
+  IF nullif(trim(payload->>'content'),'') IS NULL OR length(payload->>'content')>5000 THEN RAISE EXCEPTION 'Enter a notice of 1 to 5000 characters'; END IF;
+  IF coalesce(payload->>'target_type','') NOT IN ('all','role','individual') OR coalesce(payload->>'priority','') NOT IN ('normal','urgent') THEN RAISE EXCEPTION 'Choose an audience and priority'; END IF;
+  IF payload->>'target_type'='role' AND coalesce(payload->>'target_role','') NOT IN ('admin','doctor','nurse','labtech','pharmacist') THEN RAISE EXCEPTION 'Choose a staff role'; END IF;
+  IF payload->>'target_type'='individual' AND NOT EXISTS(SELECT 1 FROM public.facility_members WHERE facility_id=f AND user_id=nullif(payload->>'target_user_id','')::uuid AND active) THEN RAISE EXCEPTION 'Choose an active colleague in this institution'; END IF;
+  INSERT INTO public.staff_broadcasts(id,author_id,author_name,content,priority,target_type,target_role,target_user_id,facility_id)
+  VALUES(rid,auth.uid(),coalesce((SELECT name FROM public.profiles WHERE id=auth.uid()),'Staff member'),trim(payload->>'content'),payload->>'priority',payload->>'target_type',CASE WHEN payload->>'target_type'='role' THEN payload->>'target_role' END,CASE WHEN payload->>'target_type'='individual' THEN (payload->>'target_user_id')::uuid END,f) ON CONFLICT(id) DO NOTHING;
+ WHEN 'delete_notice' THEN
+  DELETE FROM public.staff_broadcasts WHERE id=rid AND facility_id=f AND (author_id=auth.uid() OR r='admin');
+  IF NOT FOUND THEN RAISE EXCEPTION 'Notice unavailable or removal permission denied'; END IF;
  WHEN 'register' THEN
   IF r NOT IN ('admin','nurse','doctor') THEN RAISE EXCEPTION 'Registration permission required'; END IF;
   pid:=coalesce(nullif(pid,''),'CL-'||rid::text);
@@ -309,9 +325,10 @@ DECLARE r text; pid text; rid uuid; v public.visits; rx public.prescriptions; b 
   IF v.version IS DISTINCT FROM (payload->>'version')::integer THEN RAISE EXCEPTION 'This visit changed. Refresh before saving.'; END IF;
   IF v.status IN ('completed','cancelled') THEN RAISE EXCEPTION 'Closed visits cannot be overwritten'; END IF;
   IF payload ? 'diagnosis' AND r='nurse' THEN RAISE EXCEPTION 'A clinician must record the diagnosis'; END IF;
-  IF payload->>'status' NOT IN ('waiting','triage','consultation','awaiting_tests','completed','cancelled') THEN RAISE EXCEPTION 'Invalid visit status'; END IF;
+  IF coalesce(payload->>'status','') NOT IN ('waiting','triage','consultation','awaiting_tests','completed','cancelled') THEN RAISE EXCEPTION 'Invalid visit status'; END IF;
   IF r='nurse' AND payload->>'status' NOT IN ('waiting','triage','consultation','cancelled') THEN RAISE EXCEPTION 'Clinician action required'; END IF;
-  UPDATE public.visits SET status=payload->>'status',diagnosis=coalesce(payload->>'diagnosis',diagnosis),notes=coalesce(payload->>'notes',notes),follow_up_date=coalesce(nullif(payload->>'follow_up_date','')::date,follow_up_date),version=version+1 WHERE id=rid;
+  IF r='nurse' AND payload ? 'follow_up_date' THEN RAISE EXCEPTION 'A clinician must set follow-up dates'; END IF;
+  UPDATE public.visits SET status=payload->>'status',diagnosis=coalesce(payload->>'diagnosis',diagnosis),notes=coalesce(payload->>'notes',notes),follow_up_date=CASE WHEN payload ? 'follow_up_date' THEN nullif(payload->>'follow_up_date','')::date ELSE follow_up_date END,version=version+1 WHERE id=rid;
  WHEN 'observe' THEN
   IF r NOT IN ('admin','nurse','doctor') THEN RAISE EXCEPTION 'Clinical permission required'; END IF;
   SELECT * INTO v FROM public.visits WHERE id=(payload->>'visit_id')::uuid AND facility_id=f;
@@ -323,6 +340,12 @@ DECLARE r text; pid text; rid uuid; v public.visits; rx public.prescriptions; b 
   IF nullif(trim(payload->>'test_type'),'') IS NULL THEN RAISE EXCEPTION 'Test name is required'; END IF;
   IF nullif(payload->>'visit_id','') IS NOT NULL AND NOT EXISTS(SELECT 1 FROM public.visits WHERE id=(payload->>'visit_id')::uuid AND patient_id=pid AND facility_id=f) THEN RAISE EXCEPTION 'Visit does not belong to this patient'; END IF;
   INSERT INTO public.lab_results(id,patient_id,visit_id,facility_id,test_type,status,requested_by) VALUES(rid,pid,nullif(payload->>'visit_id','')::uuid,f,payload->>'test_type','requested',auth.uid()) ON CONFLICT(id) DO NOTHING;
+ WHEN 'lab_upload' THEN
+  IF r NOT IN ('admin','labtech') OR NOT public.careline_patient_access(pid,f) THEN RAISE EXCEPTION 'Laboratory and registered patient required'; END IF;
+  IF nullif(trim(payload->>'test_type'),'') IS NULL OR nullif(trim(payload->>'summary'),'') IS NULL THEN RAISE EXCEPTION 'Test name and result summary required'; END IF;
+  IF nullif(payload->>'storage_path','') IS NOT NULL AND (split_part(payload->>'storage_path','/',1)<>f::text OR split_part(payload->>'storage_path','/',2)<>pid OR NOT EXISTS(SELECT 1 FROM storage.objects WHERE bucket_id='LAB_result' AND name=payload->>'storage_path' AND owner_id=auth.uid()::text)) THEN RAISE EXCEPTION 'Upload a private attachment for this patient and institution'; END IF;
+  INSERT INTO public.lab_results(id,patient_id,facility_id,test_type,summary,storage_path,uploaded_by,status)
+  VALUES(rid,pid,f,trim(payload->>'test_type'),trim(payload->>'summary'),nullif(payload->>'storage_path',''),auth.uid(),'completed') ON CONFLICT(id) DO NOTHING;
  WHEN 'lab_progress' THEN
   IF r NOT IN ('admin','labtech') THEN RAISE EXCEPTION 'Laboratory permission required'; END IF;
   UPDATE public.lab_results SET status='processing',specimen_reference=payload->>'specimen_reference' WHERE id=rid AND facility_id=f AND status='requested';
@@ -362,17 +385,19 @@ DECLARE r text; pid text; rid uuid; v public.visits; rx public.prescriptions; b 
   IF paid+amount>rx.quantity THEN RAISE EXCEPTION 'Quantity exceeds the remaining prescription'; END IF;
   UPDATE public.stock_batches SET quantity=quantity-amount WHERE id=b.id;
   INSERT INTO public.dispensings VALUES(rid,rx.id,b.id,f,rx.patient_id,amount,b.unit_price,auth.uid(),now());
+  IF paid+amount=rx.quantity THEN UPDATE public.prescriptions SET status='completed' WHERE id=rx.id; END IF;
  WHEN 'appointment' THEN
   IF NOT public.careline_owns(pid) AND (r NOT IN ('admin','nurse','doctor') OR NOT public.careline_patient_access(pid,f)) THEN RAISE EXCEPTION 'Appointment permission denied'; END IF;
   IF (payload->>'scheduled_at')::timestamptz<=now() OR nullif(trim(payload->>'reason'),'') IS NULL THEN RAISE EXCEPTION 'Choose a future time and reason'; END IF;
   INSERT INTO public.appointments(id,patient_id,facility_id,scheduled_at,reason,status) VALUES(rid,pid,f,(payload->>'scheduled_at')::timestamptz,payload->>'reason',CASE WHEN r IN ('admin','nurse','doctor') THEN 'confirmed' ELSE 'requested' END) ON CONFLICT(id) DO NOTHING;
  WHEN 'appointment_status' THEN
   IF r NOT IN ('admin','nurse','doctor') THEN RAISE EXCEPTION 'Reception permission required'; END IF;
-  UPDATE public.appointments SET status=payload->>'status' WHERE id=rid AND facility_id=f AND status NOT IN ('cancelled','arrived');
+  IF coalesce(payload->>'status','') NOT IN ('confirmed','arrived','cancelled','missed') THEN RAISE EXCEPTION 'Invalid appointment status'; END IF;
+  UPDATE public.appointments SET status=payload->>'status' WHERE id=rid AND facility_id=f AND status IN ('requested','confirmed');
   IF NOT FOUND THEN RAISE EXCEPTION 'Appointment unavailable'; END IF;
   IF payload->>'status'='arrived' THEN
    INSERT INTO public.patient_facilities(patient_id,facility_id) SELECT patient_id,f FROM public.appointments WHERE id=rid ON CONFLICT DO NOTHING;
-   INSERT INTO public.visits(patient_id,facility_id,status,notes,attending_doctor) SELECT a.patient_id,f,'waiting',a.reason,auth.uid() FROM public.appointments a WHERE a.id=rid AND NOT EXISTS(SELECT 1 FROM public.visits v WHERE v.patient_id=a.patient_id AND v.facility_id=f AND v.status IN ('waiting','triage','consultation','awaiting_tests'));
+   INSERT INTO public.visits(patient_id,facility_id,status,notes,attending_doctor) SELECT a.patient_id,f,'waiting',a.reason,auth.uid() FROM public.appointments a WHERE a.id=rid AND NOT EXISTS(SELECT 1 FROM public.visits existing_visit WHERE existing_visit.patient_id=a.patient_id AND existing_visit.facility_id=f AND existing_visit.status IN ('waiting','triage','consultation','awaiting_tests'));
   END IF;
  WHEN 'refer' THEN
   IF r NOT IN ('admin','doctor','nurse') OR NOT public.careline_patient_access(pid,f) THEN RAISE EXCEPTION 'Referral permission denied'; END IF;
@@ -381,7 +406,7 @@ DECLARE r text; pid text; rid uuid; v public.visits; rx public.prescriptions; b 
  WHEN 'referral_status' THEN
   IF r NOT IN ('admin','doctor','nurse') THEN RAISE EXCEPTION 'Clinical permission required'; END IF;
   SELECT * INTO ref FROM public.referrals WHERE id=rid AND target_facility_id=f FOR UPDATE;
-  IF NOT FOUND OR ref.status NOT IN ('sent','accepted') OR payload->>'status' NOT IN ('accepted','declined','completed') THEN RAISE EXCEPTION 'Referral unavailable'; END IF;
+  IF NOT FOUND OR NOT ((ref.status='sent' AND coalesce(payload->>'status','') IN ('accepted','declined')) OR (ref.status='accepted' AND payload->>'status'='completed')) THEN RAISE EXCEPTION 'Referral unavailable or invalid transition'; END IF;
   UPDATE public.referrals SET status=payload->>'status' WHERE id=rid;
   IF payload->>'status'='accepted' THEN INSERT INTO public.patient_facilities(patient_id,facility_id) VALUES(ref.patient_id,f) ON CONFLICT DO NOTHING; END IF;
  WHEN 'invoice' THEN

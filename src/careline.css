@@ -5,3 +5,23 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,
 @media(min-width:1600px){.care-hero{padding-top:130px;padding-bottom:140px}}@media(max-width:1100px){.care-sidebar{width:210px;flex-basis:210px}.care-main{margin-left:210px}.care-main>main{padding:25px}.care-topbar{padding:0 25px}.care-grid{gap:16px}.care-hero{gap:40px;padding:65px 35px}.care-hero-cross{left:85px}.care-hero-art{height:420px}.care-float{padding:15px}.care-float-two{right:0}.care-public-cta{margin:25px}}
 @media(max-width:800px){.care-sidebar{transform:translateX(-100%);width:250px;transition:transform .15s}.care-sidebar.is-open{transform:translateX(0)}.care-backdrop{display:block;position:fixed;inset:0;background:#152f2666;z-index:35}.care-main{margin-left:0}.care-mobile-menu{display:block}.care-topbar{height:75px;padding:0 18px}.care-main>main{padding:22px 16px}.care-topbar label{max-width:160px}.care-account-link{display:none}.care-grid{grid-template-columns:1fr}.care-stats{gap:10px}.care-stats>div{padding:16px}.care-stats strong{font-size:1.8rem}.care-stats span{font-size:.7rem}.care-stats small{font-size:.6rem}.care-welcome{padding:25px;align-items:flex-start;flex-direction:column}.care-panel{padding:20px}.care-page-title{align-items:flex-start;flex-direction:column}.care-patient-header{flex-wrap:wrap}.care-patient-header .care-eyebrow{font-size:.5rem}.care-hero{grid-template-columns:1fr;padding:55px 25px;gap:35px}.care-hero h1{font-size:4rem}.care-hero-art{max-width:460px;width:100%;margin:auto}.care-hero-cross{left:calc(50% - 90px)}.care-float-one{left:-5px}.care-public-nav{padding:18px 22px}.care-public-nav>div{gap:16px}.care-public-nav a[href^="#"]{display:none}.care-wordmark{font-size:1.8rem}.care-feature-grid{grid-template-columns:repeat(2,1fr);gap:30px}.care-public-section{padding:40px 25px}.care-public-cta{flex-direction:column;align-items:flex-start;padding:30px;margin:20px}.care-landing footer{flex-wrap:wrap;padding:25px;gap:20px}.care-auth-card{padding:26px}.care-auth .care-grid{grid-template-columns:1fr}.care-topbar select{max-width:140px}.care-table td{padding:14px 8px}}
 @media print{.care-sidebar,.care-topbar,.care-tabs,.care-form,.btn,.skip-link,.care-backdrop{display:none!important}.care-main{margin:0}.care-main>main{padding:0}.care-panel,.care-card{break-inside:avoid;box-shadow:none;border:1px solid #aaa}.care-grid{display:block}.care-panel{margin-bottom:16px}body{background:#fff}.care-card img{print-color-adjust:exact}}
+
+/* Long patient identifiers and translated labels must fit small screens. */
+.care-list-row>div,.care-patient-header>div,.care-topbar>div{min-width:0;overflow-wrap:anywhere}
+.care-list-row{flex-wrap:wrap}.care-list-row .btn{flex-shrink:0}
+.care-form-footer{flex-wrap:wrap}.care-field{min-width:0}
+.care-table-wrap{max-width:100%;overscroll-behavior-x:contain}
+.care-table td small,.care-patient-header .care-eyebrow{overflow-wrap:anywhere}
+.care-nav-close{display:none}.care-topbar{min-height:75px;height:auto;padding-top:18px;padding-bottom:18px;flex-wrap:wrap}
+@media(max-width:800px){
+ .care-nav-close{display:block;position:absolute;top:24px;right:14px;padding:10px}
+ .care-mobile-menu{padding:9px;flex-shrink:0}.care-sidebar{padding-bottom:max(20px,env(safe-area-inset-bottom))}
+ .care-topbar>div{flex:1}.care-topbar label{width:100%;max-width:none;margin-left:0}
+ .care-topbar select{max-width:100%;flex:1}.care-main>main{padding-bottom:max(24px,env(safe-area-inset-bottom))}
+ .care-field input,.care-field textarea,.care-field select{font-size:16px}
+ .care-patient-header>div:nth-child(2){flex-basis:190px}.care-stats{grid-template-columns:repeat(auto-fit,minmax(120px,1fr))}
+}
+@media(prefers-reduced-motion:reduce){.care-sidebar{transition:none}}
+
+.care-table-wrap:has(tbody:empty){display:none}
+@media(max-width:420px){.care-stats>div:last-child:nth-child(odd){grid-column:1/-1}}
