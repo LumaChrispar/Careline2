@@ -1,11 +1,11 @@
 {
   "short_name": "Careline",
-  "name": "Careline ? Your care, connected",
+  "name": "Careline - Your care, connected",
   "icons": [
     {
-      "src": "/careline.svg",
+      "src": "/careline-icon-v2.png",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     }
   ],

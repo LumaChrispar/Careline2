@@ -25,3 +25,15 @@ body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,
 
 .care-table-wrap:has(tbody:empty){display:none}
 @media(max-width:420px){.care-stats>div:last-child:nth-child(odd){grid-column:1/-1}}
+
+.care-wordmark>img{width:38px;height:38px;object-fit:contain;margin-right:8px;align-self:center}
+.care-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.care-summary-grid p{font-size:.85rem;line-height:1.8}.care-disclosure{margin:16px 0;border:1px solid #dce5df;border-radius:10px;padding:14px}
+.care-disclosure>summary,.care-nav-more>summary{cursor:pointer;font-size:.82rem;font-weight:600;color:#35664f}
+.care-disclosure[open]>.care-form{margin-top:18px}.care-response{border-left:3px solid #176b59;padding:10px 15px;margin-top:16px;background:#f0f6ee}
+.care-plan-section{margin-top:20px}.care-plan-section h4{font-size:.88rem;color:#385448}.care-record-actions{margin:0}
+.care-nav-more{margin-top:12px}.care-nav-more>summary{padding:12px;font-size:.74rem}.care-bottom-nav{display:none}
+.status-overdue{background:#fbe5df;color:#a84335}#care-print-container{display:none}
+@media(max-width:1000px){.care-summary-grid{grid-template-columns:1fr}}
+@media(max-width:800px){.care-bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fbfcf9;border-top:1px solid #dce5df;z-index:30;padding:8px 8px max(10px,env(safe-area-inset-bottom));gap:4px}.care-bottom-nav>a,.care-bottom-nav>button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;flex:1;min-height:46px;color:#5f7668;text-decoration:none;font-size:.65rem;border-radius:8px}.care-bottom-nav>a.active{background:#e8f0e6;color:#176b59}.care-main>main{padding-bottom:100px}.care-sidebar>.care-wordmark{font-size:1.55rem;margin-left:0}.care-sidebar>.care-wordmark>img{width:30px;height:30px}}
+@media print{.care-bottom-nav,.care-record-actions{display:none!important}body.printing-care-plan #root{display:none!important}body.printing-care-plan #care-print-container{display:block}.care-plan-document{padding:20px}.care-plan-section{break-inside:avoid}}

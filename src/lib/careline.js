@@ -21,7 +21,8 @@ export async function rpc(name, args = {}) {
   if (error) throw new Error(error.message)
   return data
 }
-export const command = (action, facilityId, payload) => rpc('careline_command', { action, f: facilityId, payload })
+const coordinationActions = new Set(['concern_add','concern_review','plan_save','plan_publish','plan_acknowledge','task_create','task_update','lab_escalate'])
+export const command = (action, f, payload) => rpc(['assign_doctor','referral_assign','revoke_invitation'].includes(action) ? 'careline_staff_care' : coordinationActions.has(action) ? 'careline_coordination' : 'careline_command', { action, f, payload })
 export const money = value => Number(value || 0).toLocaleString('fr-CM') + ' FCFA'
 export const fullName = p => p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : ''
 export const isCurrentPrescription = (p, today = new Date().toISOString().slice(0, 10)) => p.status === 'active' && p.starts_on <= today && (!p.ends_on || p.ends_on >= today)

@@ -5,6 +5,7 @@ import AppLayout from './components/layout/AppLayout'
 import AuthPage from './pages/AuthPage'
 import CareLandingPage from './pages/CareLandingPage'
 import { syncIntake } from './lib/offline'
+const Tasks=lazy(()=>import('./pages/TasksPage'))
 const Worklist=lazy(()=>import('./pages/WorklistPage'))
 const Patients=lazy(()=>import('./pages/CarePatientsPage'))
 import Intake from './pages/CareIntakePage'
@@ -45,7 +46,7 @@ export default function App(){
  const staff=['admin','doctor','nurse','labtech','pharmacist']
  const route=(path,roles,element)=><Route key={path} path={path} element={<Guard roles={roles}>{element}</Guard>}/>
  return <BrowserRouter><Suspense fallback={<div className="app-loading" role="status">Loading workspace…</div>}><Routes>
- <Route path="/" element={<CareLandingPage/>}/><Route path="/login" element={user?<Navigate to={home} replace/>:<AuthPage/>}/><Route path="/register" element={user?<Navigate to={home} replace/>:<AuthPage/>}/>
+ <Route path="/" element={<CareLandingPage/>}/><Route path="/login" element={user?<Navigate to={home} replace/>:<AuthPage/>}/><Route path="/activate" element={user?<Navigate to={home} replace/>:<AuthPage/>}/><Route path="/register" element={user?<Navigate to={home} replace/>:<AuthPage/>}/>
  <Route element={<Guard><AppLayout key={[user?.id,user?.user_metadata?.facility_id,role].join(':')}/></Guard>}>
  {route('/dashboard',staff,role==='pharmacist'?<Pharmacy/>:role==='labtech'?<Labs/>:<Worklist/>)}
  {route('/patients',['admin','doctor','nurse','labtech'],<Patients/>)}
@@ -59,6 +60,7 @@ export default function App(){
  {route('/billing',['admin','nurse','pharmacist'],<Billing/>)}
  {route('/admin/users',['admin'],<Team/>)}
  {route('/pending',['admin','nurse','doctor'],<Pending/>)}
+ {route('/tasks',staff,<Tasks/>)}
  {route('/communication',staff,<NoticeBoard/>)}
  {route('/my-records',['patient'],<Portal/>)}
  {route('/institutions',null,<Institutions/>)}

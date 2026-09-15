@@ -73,32 +73,22 @@ test('restored sessions expose role and name and unsubscribe cleanly', async () 
   assert.equal(unsubscribed, true);
 });
 
-test('patient search accepts a complete name with surrounding spaces', () => {
-  const store = loadStore('src/stores/patientStore.js', {});
-  store.setState({ patients: [{ id: 'MT-1', first_name: 'Amina', last_name: 'Ngwa' }], searchQuery: '  amina ngwa  ' });
-  assert.equal(store.getState().getFilteredPatients().length, 1);
+test('active patient search handles complete names and removes filter syntax', async () => {
+  const { searchPatients } = await import('../src/lib/patientSearch.js');
+  const calls=[];
+  const query={ilike:(...args)=>{calls.push(args);return query;},or:value=>{calls.push(value);return query;}};
+  searchPatients(query,'  Amina Ngwa  ');
+  assert.deepEqual(calls,[['first_name','%Amina%'],['last_name','%Ngwa%']]);
+  calls.length=0;
+  searchPatients(query,'Ngwa,%');
+  assert.equal(calls[0],'first_name.ilike.%Ngwa%,last_name.ilike.%Ngwa%,phone.ilike.%Ngwa%,id.ilike.%Ngwa%');
 });
 
-test('registration without portal omits password and normalizes optional fields', async () => {
-  let record;
-  const store = loadStore('src/stores/patientStore.js', { from: () => ({ insert: rows => {
-    record = rows[0];
-    return { select: () => ({ single: async () => ({ data: record, error: null }) }) };
-  } }) });
-  await store.getState().addPatient({ first_name: 'Amina', last_name: 'Ngwa', password: '', blood_group: '', phone: '' });
-  assert.equal('password' in record, false);
-  assert.equal(record.blood_group, null);
-  assert.equal(record.phone, null);
-  assert.ok(record.id.startsWith('MT-'));
-});
-
-test('a pending patient fetch cannot repopulate records after logout reset', async () => {
-  let resolvePatients;
-  const patientRequest = new Promise(resolve => { resolvePatients = resolve; });
-  const store = loadStore('src/stores/patientStore.js', { from: table => ({ select: () => table === 'patients' ? patientRequest : { order: async () => ({ data: [] }) } }) });
-  const fetch = store.getState().fetchData();
-  store.getState().reset();
-  resolvePatients({ data: [{ id: 'previous-account-record' }] });
-  await fetch;
-  assert.deepEqual(store.getState().patients, []);
+test('overdue waiting tasks remain urgent and closed tasks leave the active worklist', async () => {
+  const { taskBucket } = await import('../src/lib/tasks.js');
+  const now=new Date('2026-09-15T12:00:00Z');
+  assert.equal(taskBucket({status:'waiting',due_at:'2026-09-14T09:00:00Z'},now),'urgent');
+  assert.equal(taskBucket({status:'completed',priority:'urgent',due_at:'2026-09-14T09:00:00Z'},now),'closed');
+  assert.equal(taskBucket({status:'waiting',due_at:'2099-01-01T09:00:00Z'},now),'waiting');
+  assert.equal(taskBucket({status:'open',due_at:'2099-01-01T09:00:00Z'},now),'upcoming');
 });

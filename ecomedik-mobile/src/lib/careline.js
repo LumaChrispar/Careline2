@@ -12,7 +12,8 @@ export async function rpc(name,args={}){
  if(error)throw error
  return data
 }
-export const command=(action,f,payload)=>rpc('careline_command',{action,f,payload})
+const coordinationActions = new Set(['concern_add','concern_review','plan_save','plan_publish','plan_acknowledge','task_create','task_update','lab_escalate'])
+export const command = (action, f, payload) => rpc(['assign_doctor','referral_assign','revoke_invitation'].includes(action) ? 'careline_staff_care' : coordinationActions.has(action) ? 'careline_coordination' : 'careline_command', { action, f, payload })
 export async function signIn(identifier,password){
  if(identifier.includes('@'))return supabase.auth.signInWithPassword({email:identifier.trim(),password})
  const phone=normalizePhone(identifier),result=await supabase.auth.signInWithPassword({phone,password})

@@ -17,7 +17,7 @@ async function asUser(id) {
 async function cmd(action, payload, f=facility) { return (await db.query('SELECT public.careline_command($1,$2,$3) AS result',[action,f,JSON.stringify(payload)])).rows[0].result }
 before(async () => {
   await db.exec(await readFile('tests/fixtures/supabase-platform.sql','utf8'))
-  await db.exec(await readFile('database-migrations/20260910_careline.sql','utf8'))
+  await db.exec(await readFile('database.sql','utf8'))
   await db.query(`INSERT INTO auth.users(id,email,email_confirmed_at) VALUES($1,'admin@example.com',now()),($2,'nurse@example.com',now()),($3,'outsider@example.com',now())`,[admin,nurse,outsider])
   await db.query(`INSERT INTO public.facilities(id,name,status) VALUES($1,'Centre A','active'),($2,'Centre B','active')`,[facility,otherFacility])
   await db.query(`INSERT INTO public.facility_members(facility_id,user_id,role,active) VALUES($1,$2,'admin',true),($1,$3,'nurse',true),($4,$5,'doctor',true)`,[facility,admin,nurse,otherFacility,outsider])
@@ -25,7 +25,7 @@ before(async () => {
 after(() => db.close())
 
 test('schema installs and can be applied twice without duplicates or weakened permissions', async () => {
-  await db.exec(await readFile('database-migrations/20260910_careline.sql','utf8'))
+  await db.exec(await readFile('database.sql','utf8'))
   assert.equal((await db.query("SELECT public FROM storage.buckets WHERE id='LAB_result'")).rows[0].public,false)
 })
 test('anonymous users cannot call privileged workflow commands', async () => {
@@ -183,7 +183,7 @@ test('an assigned external pharmacy can identify and bill a patient without seei
 })
 
 test('root SQL is the complete current installation script', async () => {
-  assert.equal(await readFile('database.sql','utf8'),await readFile('database-migrations/20260910_careline.sql','utf8'))
+  assert.equal(await readFile('database.sql','utf8'),(await Promise.all(['20260910_careline.sql','20260915_care_coordination.sql', '20260916_staff_handover.sql'].map(name=>readFile('database-migrations/'+name,'utf8')))).join('\n'))
 })
 
 test('original database upgrades without losing records or trusting legacy roles', async () => {

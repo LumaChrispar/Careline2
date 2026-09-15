@@ -4,11 +4,10 @@
     "slug": "ecomedik",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
-    "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "icon": "./assets/careline-icon-v2.png",
+    "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./assets/careline-icon-v2.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,24 +16,32 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/careline-mark-v2.png",
+        "backgroundColor": "#f6f8f5"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.youngmangreen.ecomedik"
     },
     "web": {
-      "favicon": "./assets/logo.png"
+      "favicon": "./assets/careline-icon-v2.png"
     },
     "plugins": [
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Careline to photograph laboratory documents.",
+          "recordAudioAndroid": false,
+          "microphonePermission": false
+        }
+      ]
     ],
     "extra": {
       "eas": {
         "projectId": "ce48b5a0-f5c3-4f8a-83c5-8280353c995c"
       },
       "owner": "lumachris1"
-    }
+    },
+    "scheme": "careline"
   }
 }

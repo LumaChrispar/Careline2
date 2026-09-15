@@ -4,13 +4,13 @@
 
 Use a separate Supabase test project for the first acceptance run. For an existing installation, take a database backup and preserve Storage objects before upgrading. The script retains patient and clinical records, allows unknown birth dates and shared contact numbers, and makes the laboratory bucket private.
 
-The script is transactional and repeatable. If a statement fails, the transaction rolls back; inspect the error before retrying. A database rollback after live writes requires a restore plan, not running the old SQL.
+The combined script is repeatable and contains three migration transactions. If a statement fails, that migration rolls back; an earlier committed migration remains applied. Stop on errors, inspect the failure, and rerun the full script after correcting it. A database rollback after live writes requires a restore plan, not running the old SQL.
 
 ## 2. Install the complete SQL
 
 Run the entire root `database.sql` in the Supabase SQL editor as the project database administrator. It supports a fresh Supabase project, the original ECO-MEDIK schema, and the existing Careline schema. No historical script is a prerequisite.
 
-The script creates facilities, profiles, memberships, invitations, patients, facility links, visits, observations, laboratory results, prescriptions, stock, dispensing, appointments, referrals, invoices, payments, notices, account-link requests, and audit events. It installs server-owned permissions, validated workflow commands, signup triggers, and private laboratory storage policies.
+The script creates facilities, profiles, memberships, invitations, patients, facility links, visits, observations, laboratory results, prescriptions, stock, dispensing, appointments, referrals, invoices, payments, notices, account-link requests, patient concerns, care plans, staff care tasks, and audit events. It installs server-owned permissions, validated workflow commands, signup triggers, and private laboratory storage policies.
 
 Do not run `fix_triggers.sql`, the old nurse-only migration, or SQL from `tests/fixtures` afterward. The application uses Careline RPC commands for clinical writes; deploy matching web and mobile clients together. Older clients that write directly to clinical tables will be denied.
 
@@ -30,7 +30,7 @@ The application refreshes worklists periodically and after its own writes. Realt
 
 ## 4. Bootstrap the first operator
 
-Create a personal account through the app using the **Institution staff / owner** purpose and verify its email. In the privileged SQL editor, look up the account:
+Create a personal account through the app and verify its email. Public signup grants patient access only; staff access is assigned separately by an administrator. In the privileged SQL editor, look up the account:
 
 ```sql
 SELECT id, email, email_confirmed_at
@@ -66,9 +66,9 @@ Do not activate all legacy memberships in bulk. The administrator can review the
 
 ## 5. Invite staff and link patients
 
-Save invitations with the colleague's real email and role. The colleague registers as staff, verifies that email, signs in, and refreshes access. Invitations expire after seven days. The app saves invitations; it does not send invitation emails automatically. Previously inactive memberships require explicit administrator activation.
+From Team & access, confirm the colleague works at your institution and add their real email and responsibility. Share the private setup link directly: the colleague sets their own password, verifies the invited email, then uses ordinary login. Existing account holders can sign in normally. Invitations expire after seven days and can be revoked; renewing one changes its setup code. The app does not send invitations automatically or let administrators see passwords. Previously inactive memberships require explicit administrator reactivation. Native setup links use careline://staff-activate and require a rebuilt installed app. Active institution memberships have staff badge IDs; these identify membership and do not certify professional licensing.
 
-For existing patients, register the personal account with **I already have a Careline patient card**, then request linking from **My care**. A facility administrator verifies identity in person before approving the link. The application will not merge two existing patient records automatically.
+For existing patients, register the personal account and select **I already have a Careline patient card**, then request linking from **My care**. A facility administrator verifies identity in person before approving the link. The application will not merge two existing patient records automatically.
 
 For a new patient without a portal, staff can register names and available information directly. Do not invent birth dates or blood groups. Shared family contact numbers are allowed.
 

@@ -7,11 +7,13 @@ export default function WorklistPage() {
   const visits = useRecords('visits')
   const labs = useRecords('lab_results', {order:'uploaded_at'})
   const appointments = useRecords('appointments')
+  const tasks=useRecords('care_tasks',{order:'due_at',ascending:true,statuses:['open','in_progress','waiting']})
   const open = visits.rows.filter(v => !['completed','cancelled'].includes(v.status))
   const review = labs.rows.filter(l => l.status === 'completed')
   return <div className="care-stack">
     <div className="care-welcome"><div><p className="care-eyebrow">CARELINE · YOUR DAY</p><h1>Good care starts with a clear next step.</h1><p>Welcome, {user?.name || 'colleague'}. Your {role === 'nurse' ? 'nursing and reception' : role} workspace is ready.</p></div><Link className="btn btn-primary" to="/patients/new">Register a patient</Link></div>
     <div className="care-stats"><div><span>Open visits</span><strong>{open.length}</strong><small>In the latest 200 visits</small></div><div><span>Results to review</span><strong>{review.length}</strong><small>Completed by the laboratory</small></div><div><span>Appointment requests</span><strong>{appointments.rows.filter(a=>a.status==='requested').length}</strong><small>Awaiting confirmation</small></div></div>
+    <Panel title="Your next actions" actions={<Link className="btn btn-ghost" to="/tasks">Open tasks</Link>}><Feedback data={tasks}/>{tasks.rows.filter(t=>t.assigned_to===user.id||!t.assigned_to).slice(0,3).map(t=><div className="care-list-row" key={t.id}><div><strong>{t.title}</strong><p>Due {new Date(t.due_at).toLocaleString()}</p></div><Status value={t.priority==='urgent'?'urgent':new Date(t.due_at)<new Date()?'overdue':t.status}/></div>)}{!tasks.loading&&!tasks.error&&!tasks.rows.length&&<Empty>No assigned tasks yet.</Empty>}</Panel>
     <Panel title="Patients awaiting care" actions={<button className="btn btn-ghost" onClick={visits.refresh}>Refresh</button>}>
       <Feedback data={visits}/><div className="care-table-wrap"><table className="care-table"><thead><tr><th>Patient</th><th>Arrived</th><th>Priority</th><th>Stage</th><th>Next step</th></tr></thead><tbody>
       {open.map(v=><tr key={v.id}><td><Link to={'/patients/'+v.patient_id}>{v.patient_id}</Link></td><td>{new Date(v.date).toLocaleString()}</td><td><Status value={v.priority}/></td><td><Status value={v.status}/></td><td><Link className="btn btn-ghost" to={'/patients/'+v.patient_id}>Open visit →</Link></td></tr>)}

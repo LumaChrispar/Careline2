@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node --test tests/core-flows.test.cjs tests/database.test.mjs",
+    "test": "node --test tests/core-flows.test.cjs tests/database.test.mjs tests/coordination.test.mjs tests/mobile-workspace.test.mjs tests/staff-handover.test.mjs",
     "test:browser": "playwright test",
     "check": "npm run lint && npm run test && npm run build",
     "sql:sync": "node scripts/sync-sql.mjs"
