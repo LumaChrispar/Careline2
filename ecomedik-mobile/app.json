@@ -34,7 +34,8 @@
           "recordAudioAndroid": false,
           "microphonePermission": false
         }
-      ]
+      ],
+      "expo-sharing"
     ],
     "extra": {
       "eas": {

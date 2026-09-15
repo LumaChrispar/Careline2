@@ -14,7 +14,7 @@ Use `npm run build` for the production web bundle in `dist/`. Static hosting mus
 
 ## Start the mobile app
 
-From `ecomedik-mobile`, run `npm ci`, copy `.env.example` to `.env`, configure the same Supabase project, and run `npm start`. Use a development build or compatible Expo client to test on a device. Native identifiers remain unchanged so existing installations retain their application identity.
+From `ecomedik-mobile`, run `npm ci`, copy `.env.example` to `.env`, configure the same Supabase project, and run `npm start`. The app uses Expo SDK 57. Rebuild the development client after upgrading; see [SDK requirements and installation](docs/EXPO_SDK_UPGRADE.md). The Android application identifier remains unchanged.
 
 ## Implemented workflows
 
@@ -41,8 +41,9 @@ The first command runs lint, 47 core/database/mobile regression tests, and a pro
 Mobile bundle checks, from `ecomedik-mobile`:
 
 ```sh
-npx expo export --platform android --output-dir dist-check
-npx expo export --platform ios --output-dir dist-check-ios
+npm run check:dependencies
+npm run doctor
+npm run export:native
 ```
 
 Read [release verification](docs/RELEASE_CHECKLIST.md) before real use. Local tests do not verify hosted authentication, SMS/email delivery, storage, physical-device behavior, or clinical suitability.
